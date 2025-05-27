@@ -1,46 +1,28 @@
 import os
-import asyncio
-from telethon import TelegramClient, events
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import openai
 
-# Переменные окружения (устанавливаем в Railway)
-API_ID = int(os.environ['API_ID'])
-API_HASH = os.environ['API_HASH']
-OPENAI_API_KEY = os.environ['OPENAI_API_KEY']
+openai.api_key = os.getenv('OPENAI_API_KEY')
 
-# Инициализация
-client = TelegramClient('session', API_ID, API_HASH)
-openai.api_key = OPENAI_API_KEY
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text('Привет! Напиши что-нибудь, и я отвечу с помощью ИИ.')
 
-async def gpt_response(prompt):
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=150,
-            temperature=0.7,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return f"Ошибка OpenAI: {e}"
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text
+    response = openai.ChatCompletion.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": user_text}],
+        max_tokens=150,
+        temperature=0.7,
+    )
+    answer = response.choices[0].message.content.strip()
+    await update.message.reply_text(answer)
 
-@client.on(events.NewMessage(incoming=True))
-async def handler(event):
-    sender = await event.get_sender()
-    if sender.is_self:
-        return  # не отвечать самому себе
+if __name__ == '__main__':
+    application = ApplicationBuilder().token(os.getenv('TELEGRAM_BOT_TOKEN')).build()
 
-    text = event.raw_text
-    print(f"Новое сообщение: {text}")
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
-    reply = await gpt_response(text)
-    await event.respond(reply)
-
-async def main():
-    print("Запускаем userbot...")
-    await client.start()
-    print("Userbot запущен.")
-    await client.run_until_disconnected()
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    application.run_polling()
